@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anima LoRA Editor</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <!-- Apply the saved theme + its background before first paint (no flash on reload) -->
+  <script>
+    try {
+      var t = localStorage.getItem('anima-theme') || 'dark';
+      document.documentElement.dataset.theme = t;
+      var bg = JSON.parse(localStorage.getItem('anima-theme-bg') || '{}');
+      if (bg && bg[t]) document.documentElement.style.setProperty('--waifu-image', 'url("' + bg[t] + '")');
+      var im = localStorage.getItem('anima-immersive');
+      if (im === 'on') im = 'reveal';  // back-compat: old 2-state value
+      if (im === 'reveal' || im === 'hidden') document.documentElement.dataset.immersive = im;
+    } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+  </script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- Layered background: waifu image -> overlay -> falling sakura petals -->
+  <div class="bg-layer bg-waifu" aria-hidden="true"></div>
+  <div class="bg-layer bg-vignette" aria-hidden="true"></div>
+  <div class="bg-layer bg-petals" aria-hidden="true">
+    <!-- Sakura petals injected via CSS -->
+    <span class="petal p1"></span><span class="petal p2"></span><span class="petal p3"></span>
+    <span class="petal p4"></span><span class="petal p5"></span><span class="petal p6"></span>
+    <span class="petal p7"></span><span class="petal p8"></span><span class="petal p9"></span>
+    <span class="petal p10"></span><span class="petal p11"></span><span class="petal p12"></span>
+  </div>
+
+  <main class="shell">
+
+    <header class="header">
+      <div class="brand">
+        <span class="brand-glyph" aria-hidden="true">あ</span>
+        <div class="brand-words">
+          <h1>Anima <span>LoRA Editor</span></h1>
+          <p class="tagline">Selective block editing &middot; 28 AnimaBlock layers &middot; LLMAdapter aware</p>
+        </div>
+      </div>
+      <div class="header-tools">
+        <div class="control-row">
+        <div class="theme-switch" role="group" aria-label="Color theme">
+          <button type="button" class="theme-btn" data-theme="light"  title="Light"          aria-pressed="false"><span aria-hidden="true">☀</span></button>
+          <button type="button" class="theme-btn" data-theme="dark"   title="Dark"           aria-pressed="true"><span aria-hidden="true">☾</span></button>
+          <button type="button" class="theme-btn" data-theme="sakura" title="Cherry blossom" aria-pressed="false"><span aria-hidden="true">❀</span></button>
+          <button type="button" class="theme-btn" data-theme="kurenai" title="Crimson"         aria-pressed="false"><span aria-hidden="true">♥</span></button>
+        </div>
+
+        <!-- Immersive cycle: normal → reveal (image through panels) → hidden (panels gone) -->
+        <button type="button" class="immersive-btn" id="immersive-btn"
+                title="Reveal background — show the image through the panels"
+                aria-pressed="false">
+          <span class="immersive-glyph" aria-hidden="true">👁</span>
+        </button>
+
+        <!-- Per-theme background image: generate / upload / clear -->
+        <div class="bg-menu">
+          <button type="button" class="bg-menu-btn" id="bg-menu-btn"
+                  title="Theme background" aria-haspopup="true" aria-expanded="false">
+            <span aria-hidden="true">🖼</span>
+          </button>
+          <div class="bg-menu-pop" id="bg-menu-pop" role="menu" hidden>
+            <p class="bg-menu-title">Background · <b data-bg-theme-label>dark</b></p>
+            <button type="button" class="bg-menu-item" data-bg-action="generate" role="menuitem">
+              <span aria-hidden="true">✨</span> Generate (fits screen)
+            </button>
+            <button type="button" class="bg-menu-item" data-bg-action="upload" role="menuitem">
+              <span aria-hidden="true">⬆</span> Upload image…
+            </button>
+            <button type="button" class="bg-menu-item bg-menu-clear" data-bg-action="clear" role="menuitem">
+              <span aria-hidden="true">✕</span> Clear
+            </button>
+            <p class="bg-menu-hint">Fills the whole background for this theme.</p>
+          </div>
+        </div>
+        </div>
+        <!-- Single hidden picker shared by every "Upload" control -->
+        <input type="file" id="bg-upload-input" accept="image/*" hidden />
+
+        <div class="status-pill" id="health-pill" data-state="idle">offline</div>
+      </div>
+    </header>
+
+    <!-- ─── INPUT ──────────────────────────────────────────────────────── -->
+    <section class="panel" id="sec-input">
+      <header class="panel-head">
+        <span class="panel-step">い</span>
+        <div>
+          <h2>Input</h2>
+          <p>Stack one or more LoRA layers — the preview &amp; save combine them all.</p>
+        </div>
+      </header>
+
+      <!-- LoRA layers: each tab is one LoRA with its own block config. The active
+           tab drives the grid &amp; config below; preview/save merge every layer. -->
+      <div class="layer-bar" id="layer-bar" role="tablist" aria-label="LoRA layers">
+        <!-- Layer chips injected by script.js -->
+        <button type="button" class="layer-add" id="layer-add"
+                title="Add another LoRA layer to the stack">
+          <span aria-hidden="true">＋</span> Add LoRA
+        </button>
+      </div>
+
+      <div class="row">
+        <label class="field grow">
+          <span class="field-label">LoRA path · <b data-active-layer-label>layer 1</b>
+            <button type="button" class="path-clear" data-clear-path="lora_in"
+                    title="Forget saved LoRA paths" hidden>clear saved</button>
+          </span>
+          <input id="lora-path" type="text" spellcheck="false" list="dl-lora-path"
+                 placeholder="C:\models\loras\my_anima_lora.safetensors" />
+          <datalist id="dl-lora-path"></datalist>
+        </label>
+        <button id="btn-inspect" class="btn btn-primary">
+          <span class="btn-label">Inspect</span>
+          <span class="btn-spark" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div id="inspect-result" class="inspect hidden">
+        <div class="inspect-grid">
+          <div class="kv"><span>Architecture</span><b id="r-arch">—</b></div>
+          <div class="kv"><span>Total tensors</span><b id="r-total">—</b></div>
+          <div class="kv"><span>Blocks present</span><b id="r-blocks">—</b></div>
+          <div class="kv"><span>LLMAdapter</span><b id="r-llm">—</b></div>
+          <div class="kv"><span>Other tensors</span><b id="r-other">—</b></div>
+          <div class="kv"><span>Strongest block</span><b id="r-strongest">—</b></div>
+          <div class="kv"><span>Precision</span><b id="r-dtype">—</b></div>
+          <div class="kv"><span>File size</span><b id="r-size">—</b></div>
+        </div>
+        <div id="arch-warn" class="warn hidden"></div>
+
+        <!-- Validation prompt: which layers does a keyword light up? -->
+        <div class="validate-row">
+          <label class="field grow">
+            <span class="field-label">
+              Validation keyword
+              <span class="pv-seed-hint">see which layers a concept lights up — not a generation prompt</span>
+            </span>
+            <input id="validate-keyword" type="text" spellcheck="false"
+                   placeholder="e.g. playfulsloth style" />
+          </label>
+          <button id="btn-validate" class="btn btn-validate" disabled>
+            <span class="btn-label">Validate</span>
+            <span class="btn-spark" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div id="validate-note" class="validate-note hidden"></div>
+      </div>
+    </section>
+
+    <!-- ─── PRESETS & GLOBAL ───────────────────────────────────────────── -->
+    <section class="panel" id="sec-config">
+      <header class="panel-head">
+        <span class="panel-step">ろ</span>
+        <div>
+          <h2>Configure <span class="cfg-layer-tag" data-active-layer-label>layer 1</span></h2>
+          <p>Settings below apply to the active LoRA layer. Choose a preset or tune blocks individually.</p>
+        </div>
+      </header>
+
+      <div class="config-grid">
+        <label class="field">
+          <span class="field-label">Preset</span>
+          <select id="preset-select"></select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">
+            Global strength
+            <output id="global-strength-val" class="field-val">1.00</output>
+          </span>
+          <input id="global-strength" type="range" min="-2" max="2" step="0.05" value="1" />
+        </label>
+
+        <div class="toggle-card">
+          <label class="switch">
+            <input type="checkbox" id="llm-enabled" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">
+              <b>LLMAdapter</b>
+              <em>Qwen3 &rarr; DiT bridge</em>
+            </span>
+          </label>
+          <div class="mini-range">
+            <input id="llm-strength" type="range" min="-2" max="2" step="0.05" value="1" />
+            <output id="llm-strength-val">1.00</output>
+          </div>
+          <div class="card-meter" title="estimated effect on the result">
+            <span class="block-meter-track">
+              <span class="block-meter-fill" id="llm-meter-fill" data-impact="negligible"></span>
+            </span>
+            <span class="block-meter-pct" id="llm-meter-pct">—</span>
+          </div>
+          <div class="card-meter card-meter-kw" title="keyword response (validation prompt)">
+            <span class="block-meter-track">
+              <span class="block-meter-fill block-meter-fill-kw" id="llm-kw-meter-fill" data-impact="negligible"></span>
+            </span>
+            <span class="block-meter-pct block-meter-pct-kw" id="llm-kw-meter-pct">—</span>
+          </div>
+        </div>
+
+        <div class="toggle-card">
+          <label class="switch">
+            <input type="checkbox" id="other-enabled" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">
+              <b>Other weights</b>
+              <em>embeds, time, finals</em>
+            </span>
+          </label>
+          <div class="mini-range">
+            <input id="other-strength" type="range" min="-2" max="2" step="0.05" value="1" />
+            <output id="other-strength-val">1.00</output>
+          </div>
+          <div class="card-meter" title="estimated effect on the result">
+            <span class="block-meter-track">
+              <span class="block-meter-fill" id="other-meter-fill" data-impact="negligible"></span>
+            </span>
+            <span class="block-meter-pct" id="other-meter-pct">—</span>
+          </div>
+          <div class="card-meter card-meter-kw" title="keyword response (validation prompt)">
+            <span class="block-meter-track">
+              <span class="block-meter-fill block-meter-fill-kw" id="other-kw-meter-fill" data-impact="negligible"></span>
+            </span>
+            <span class="block-meter-pct block-meter-pct-kw" id="other-kw-meter-pct">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── BLOCK GRID ─────────────────────────────────────────────────── -->
+    <section class="panel" id="sec-blocks">
+      <header class="panel-head">
+        <span class="panel-step">は</span>
+        <div>
+          <h2>AnimaBlock layers</h2>
+          <p>0–9 coarse structure &middot; 10–18 identity &middot; 19–27 style &amp; detail</p>
+        </div>
+        <div class="legend">
+          <span class="leg leg-high">high</span>
+          <span class="leg leg-medium">medium</span>
+          <span class="leg leg-low">low</span>
+          <span class="leg leg-negligible">none</span>
+          <span class="leg leg-kw">keyword</span>
+        </div>
+
+        <div class="view-toggle" role="group" aria-label="Layer view mode">
+          <button type="button" class="view-btn is-active" id="view-grid"
+                  data-view="grid" aria-pressed="true" title="Grid view">
+            <span class="view-ico" aria-hidden="true">▦</span><span>Grid</span>
+          </button>
+          <button type="button" class="view-btn" id="view-list"
+                  data-view="list" aria-pressed="false" title="Single-column list view">
+            <span class="view-ico" aria-hidden="true">☰</span><span>List</span>
+          </button>
+        </div>
+      </header>
+
+      <p class="grid-hint">
+        The bar and <b>%</b> estimate each layer's <b>effect on the result</b>,
+        relative to the strongest layer — <b>brighter colours mark the strongest</b>.
+      </p>
+
+      <div class="block-grid" id="block-grid" data-view="grid">
+        <!-- Block cells injected by script.js -->
+      </div>
+    </section>
+
+    <!-- ─── LIVE PREVIEW ───────────────────────────────────────────────── -->
+    <section class="panel" id="preview-panel">
+      <header class="panel-head">
+        <span class="panel-step">に</span>
+        <div>
+          <h2>Live Preview</h2>
+          <p>Sample images via <code>ClownsharKSampler</code> (RES solver) &middot; reflects your current edits</p>
+        </div>
+        <div class="status-pill" id="preview-pill" data-state="idle">checking…</div>
+      </header>
+
+      <div class="preview-layout">
+        <div class="preview-controls">
+          <label class="field">
+            <span class="field-label">Prompt</span>
+            <textarea id="pv-prompt" rows="2" spellcheck="false">a serene anime portrait, soft lighting, detailed eyes</textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Negative</span>
+            <textarea id="pv-negative" rows="1" spellcheck="false">blurry, low quality, deformed</textarea>
+          </label>
+
+          <div class="config-grid">
+            <label class="field">
+              <span class="field-label">Sampler</span>
+              <select id="pv-sampler"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">Scheduler</span>
+              <select id="pv-scheduler"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">Steps <output id="pv-steps-val" class="field-val">20</output></span>
+              <input id="pv-steps" type="range" min="1" max="60" step="1" value="20" />
+            </label>
+            <label class="field">
+              <span class="field-label">CFG <output id="pv-cfg-val" class="field-val">5.5</output></span>
+              <input id="pv-cfg" type="range" min="0" max="20" step="0.1" value="5.5" />
+            </label>
+            <label class="field">
+              <span class="field-label">Eta &middot; SDE noise <output id="pv-eta-val" class="field-val">0.50</output></span>
+              <input id="pv-eta" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </label>
+            <label class="field">
+              <span class="field-label">Size <span class="pv-seed-hint">base render</span></span>
+              <select id="pv-size">
+                <option value="256">256 × 256</option>
+                <option value="384">384 × 384</option>
+                <option value="512" selected>512 × 512</option>
+                <option value="768">768 × 768</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Upscale <span class="pv-seed-hint">hi-res fix</span></span>
+              <select id="pv-upscale">
+                <option value="1" selected>Off</option>
+                <option value="1.5">1.5× — refine</option>
+                <option value="2">2× — sharp detail</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field-label">Seed <span class="pv-seed-hint">−1 = random each run</span></span>
+            <div class="seed-row">
+              <input id="pv-seed" type="number" value="0" step="1" />
+              <button id="pv-rand-seed" class="btn btn-mini" type="button" title="randomise seed">🎲</button>
+            </div>
+          </label>
+
+          <details class="pv-advanced" id="pv-advanced">
+            <summary>Model paths — real Anima generation (GPU)</summary>
+            <p class="pv-hint" id="pv-backend-hint"></p>
+            <label class="field">
+              <span class="field-label">DiT checkpoint
+                <button type="button" class="path-clear" data-clear-path="dit"
+                        title="Forget saved DiT paths" hidden>clear saved</button>
+              </span>
+              <input id="pv-path-dit" type="text" spellcheck="false" list="dl-pv-path-dit"
+                     placeholder="C:\models\anima\anima-preview.safetensors" />
+              <datalist id="dl-pv-path-dit"></datalist>
+            </label>
+            <label class="field">
+              <span class="field-label">VAE (Qwen-Image)
+                <button type="button" class="path-clear" data-clear-path="vae"
+                        title="Forget saved VAE paths" hidden>clear saved</button>
+              </span>
+              <input id="pv-path-vae" type="text" spellcheck="false" list="dl-pv-path-vae"
+                     placeholder="C:\models\vae\qwen_image_vae.safetensors" />
+              <datalist id="dl-pv-path-vae"></datalist>
+            </label>
+            <label class="field">
+              <span class="field-label">Text encoder (Qwen3 0.6B)
+                <button type="button" class="path-clear" data-clear-path="te"
+                        title="Forget saved text-encoder paths" hidden>clear saved</button>
+              </span>
+              <input id="pv-path-te" type="text" spellcheck="false" list="dl-pv-path-te"
+                     placeholder="C:\models\text_encoders\qwen_3_06b_base.safetensors" />
+              <datalist id="dl-pv-path-te"></datalist>
+            </label>
+          </details>
+
+          <button id="btn-preview" class="btn btn-primary">
+            <span class="btn-label">Generate sample</span>
+            <span class="btn-spark" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="preview-stage">
+          <div class="preview-image-wrap" id="pv-stage">
+            <img id="pv-image" alt="generated sample preview" />
+            <div class="pv-placeholder" id="pv-placeholder">
+              <span class="pv-placeholder-glyph">え</span>
+              <span>No preview yet — hit <b>Generate sample</b></span>
+            </div>
+            <div class="pv-spinner hidden" id="pv-spinner">
+              <span class="pv-spinner-ring" aria-hidden="true"></span>
+              <span class="pv-progress" id="pv-progress">generating…</span>
+            </div>
+          </div>
+          <div class="pv-meta" id="pv-meta"></div>
+
+          <!-- Use the same engine/settings to paint the current theme's backdrop -->
+          <div class="pv-bg-row">
+            <span class="pv-bg-label">Theme background · <b data-bg-theme-label>dark</b></span>
+            <div class="pv-bg-actions">
+              <button type="button" class="btn btn-ghost btn-sm" data-bg-action="use-preview"
+                      title="Generate a sample first" disabled>
+                <span class="btn-label">🖼 Use this sample</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" data-bg-action="generate">
+                <span class="btn-label">✨ Generate background</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" data-bg-action="upload">
+                <span class="btn-label">⬆ Upload</span>
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm bg-menu-clear" data-bg-action="clear">
+                <span class="btn-label">✕ Clear</span>
+              </button>
+            </div>
+            <p class="pv-bg-hint"><b>Use this sample</b> sets the image above (your exact edits) as the backdrop &middot; <b>Generate</b> renders a fresh one sized to your screen with the same model &amp; LoRA.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── OUTPUT ─────────────────────────────────────────────────────── -->
+    <section class="panel" id="sec-save">
+      <header class="panel-head">
+        <span class="panel-step">ほ</span>
+        <div>
+          <h2>Save</h2>
+          <p>Merges every layer into one new <code>.safetensors</code> file. Originals are never modified.</p>
+        </div>
+      </header>
+
+      <div class="row">
+        <label class="field grow">
+          <span class="field-label">Output path
+            <button type="button" class="path-clear" data-clear-path="lora_out"
+                    title="Forget saved output paths" hidden>clear saved</button>
+          </span>
+          <input id="output-path" type="text" spellcheck="false" list="dl-output-path"
+                 placeholder="C:\models\loras\my_anima_lora_edited.safetensors" />
+          <datalist id="dl-output-path"></datalist>
+        </label>
+        <button id="btn-save" class="btn btn-accent" disabled>
+          <span class="btn-label">Save edited LoRA</span>
+          <span class="btn-spark" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <!-- ─── Optimize size ─────────────────────────────────────────────── -->
+      <details id="compress-panel" class="compress">
+        <summary>
+          <span>Optimize size</span>
+          <span id="compress-summary" class="compress-summary">off</span>
+        </summary>
+
+        <div class="compress-body">
+          <div class="row">
+            <label class="field grow">
+              <span class="field-label">Precision
+                <span class="pv-seed-hint">fp16 ≈ half size, near-lossless · fp8 ≈ quarter, small quality loss</span>
+              </span>
+              <select id="compress-dtype">
+                <option value="keep">Keep original</option>
+                <option value="fp16">fp16 — 16-bit (½ of fp32)</option>
+                <option value="bf16">bf16 — 16-bit (wider range)</option>
+                <option value="fp8_e4m3fn">fp8 e4m3fn — 8-bit (¼ of fp32)</option>
+                <option value="fp8_e5m2">fp8 e5m2 — 8-bit (wider range)</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="check">
+            <input type="checkbox" id="compress-svd-enabled" />
+            <span>Reduce rank (SVD) — recompute low-rank matrices smaller</span>
+          </label>
+
+          <div id="compress-svd-opts" class="row compress-svd hidden">
+            <label class="field">
+              <span class="field-label">Mode</span>
+              <select id="compress-svd-mode">
+                <option value="rank">Target rank</option>
+                <option value="energy">Energy kept (%)</option>
+              </select>
+            </label>
+            <label class="field grow">
+              <span class="field-label" id="compress-svd-val-label">Target rank</span>
+              <input id="compress-svd-value" type="number" min="1" step="1" value="32" />
+            </label>
+          </div>
+
+          <div id="compress-estimate" class="compress-estimate hidden"></div>
+        </div>
+      </details>
+
+      <div id="save-result" class="inspect hidden">
+        <pre id="save-info"></pre>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>あ &middot; Anima LoRA Editor</span>
+    </footer>
+
+  </main>
+
+  <!-- ─── QUICK-ACTION DOCK ──────────────────────────────────────────────────
+       Fixed to the right edge, follows scroll. Icon rail that expands labels on
+       hover. Top group = run-actions (wired to the same handlers as the inline
+       buttons); bottom group = section jumps that double as a scroll indicator. -->
+  <aside class="quick-dock" id="quick-dock" aria-label="Quick actions">
+    <div class="qd-group qd-actions">
+      <button type="button" class="qd-btn qd-primary" data-qd="generate"
+              title="Generate sample">
+        <span class="qd-ico" aria-hidden="true">✨</span>
+        <span class="qd-label">Generate</span>
+        <span class="qd-spark" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="qd-btn" data-qd="switch-layer"
+              title="Switch to the next LoRA layer">
+        <span class="qd-ico" aria-hidden="true">🔀</span>
+        <span class="qd-label" id="qd-layer-label">Layer</span>
+      </button>
+      <button type="button" class="qd-btn" data-qd="reroll"
+              title="Random seed + regenerate">
+        <span class="qd-ico" aria-hidden="true">🎲</span>
+        <span class="qd-label">Reroll</span>
+      </button>
+      <button type="button" class="qd-btn qd-accent" data-qd="save"
+              title="Save edited LoRA">
+        <span class="qd-ico" aria-hidden="true">💾</span>
+        <span class="qd-label">Save</span>
+      </button>
+      <button type="button" class="qd-btn" data-qd="releases"
+              id="qd-releases-btn"
+              aria-haspopup="dialog" aria-expanded="false"
+              aria-controls="qd-releases-pop"
+              title="Download a released build">
+        <span class="qd-ico" aria-hidden="true">⬇️</span>
+        <span class="qd-label">Releases</span>
+      </button>
+    </div>
+
+    <div class="qd-sep" aria-hidden="true"></div>
+
+    <nav class="qd-group qd-nav" aria-label="Jump to section">
+      <button type="button" class="qd-dot" data-qd-jump="sec-input" title="Input">
+        <span class="qd-dot-glyph" aria-hidden="true">い</span><span class="qd-label">Input</span>
+      </button>
+      <button type="button" class="qd-dot" data-qd-jump="sec-config" title="Configure">
+        <span class="qd-dot-glyph" aria-hidden="true">ろ</span><span class="qd-label">Configure</span>
+      </button>
+      <button type="button" class="qd-dot" data-qd-jump="sec-blocks" title="AnimaBlock layers">
+        <span class="qd-dot-glyph" aria-hidden="true">は</span><span class="qd-label">Blocks</span>
+      </button>
+      <button type="button" class="qd-dot" data-qd-jump="preview-panel" title="Live Preview">
+        <span class="qd-dot-glyph" aria-hidden="true">に</span><span class="qd-label">Preview</span>
+      </button>
+      <button type="button" class="qd-dot" data-qd-jump="sec-save" title="Save">
+        <span class="qd-dot-glyph" aria-hidden="true">ほ</span><span class="qd-label">Save</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Releases popover (anchored next to the quick-dock) -->
+  <div id="qd-releases-pop" class="qd-pop" role="dialog"
+       aria-labelledby="qd-releases-title" hidden>
+    <header class="qd-pop-head">
+      <h3 id="qd-releases-title">Releases</h3>
+      <button type="button" class="qd-pop-close" id="qd-releases-close"
+              aria-label="Close releases">✕</button>
+    </header>
+    <div class="qd-pop-body" id="qd-releases-body">
+      <p class="qd-pop-status">Loading…</p>
+    </div>
+    <footer class="qd-pop-foot">
+      <a id="qd-releases-all" href="https://github.com/pclshm/anima-lora-editor/releases"
+         target="_blank" rel="noopener">All releases ↗</a>
+    </footer>
+  </div>
+
+  <!-- Floating toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>

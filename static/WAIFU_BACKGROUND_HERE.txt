@@ -1,0 +1,14 @@
+DROP YOUR WAIFU BACKGROUND HERE.
+
+Save a JPG, PNG, or WebP at one of:
+    waifu-bg.png
+    waifu-bg.jpg
+    waifu-bg.webp
+
+The CSS auto-picks it up. Without one, the app falls back to a
+sakura-pink / gold / lavender gradient mesh that looks just fine.
+
+Tips:
+- 1920x1080 or larger is recommended (it's used as background-size: cover).
+- Darker images read better with the white-cream text overlay.
+- Generate one with Anima itself for full meta-recursion.

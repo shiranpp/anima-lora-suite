@@ -1,0 +1,13 @@
+# Normalize text to LF in the repo and check out LF everywhere by default,
+# so source files don't churn between platforms…
+* text=auto eol=lf
+
+# …except Windows scripts, which MUST be CRLF or cmd.exe mis-parses them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Treat icon / image binaries as binary so LF normalization can't corrupt them.
+*.ico binary
+*.icns binary
+*.png binary

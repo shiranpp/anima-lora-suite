@@ -1,0 +1,16 @@
+# Optional extras for REAL Anima generation in the Live Preview panel.
+# The base editor needs none of these — install them only on a machine with
+# a CUDA GPU where you want actual Anima sample images.
+#
+# Prereq: a CUDA build of torch must already be installed in the same venv.
+# torch is NOT pinned here (or in requirements.txt) because the right wheel
+# depends on your driver / CUDA toolkit version — install it yourself from
+# https://pytorch.org/get-started/locally/ first.
+#
+# Install with:  setup_preview.bat   (Windows)  /  ./setup_preview.sh  (Linux/macOS)
+
+transformers>=4.44      # Qwen3 text encoder
+einops>=0.7             # tensor ops used by the DiT
+accelerate>=0.30        # device placement / dtype handling
+pillow>=10.0            # robust image IO for the real VAE decode path
+sentencepiece           # Qwen tokenizer

@@ -1,0 +1,5 @@
+flask>=3.0
+safetensors>=0.4.0
+torch>=2.0
+numpy
+packaging

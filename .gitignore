@@ -1,0 +1,59 @@
+# ─── Python ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Virtual environments ────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ─── Vendored Anima model code (cloned locally, not part of this repo) ─
+vendor/
+
+# ─── Model / weight files (never commit — large & often non-redistributable) ─
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.gguf
+*.onnx
+
+# ─── User-supplied UI background (personal content) ──────────────────
+static/waifu-bg.png
+static/waifu-bg.jpg
+static/waifu-bg.jpeg
+static/waifu-bg.webp
+# Per-theme backgrounds set via the in-app picker (generated / uploaded)
+static/user-bg/
+
+# ─── Generated / output artifacts ────────────────────────────────────
+*.log
+outputs/
+output/
+
+# ─── Editor / IDE ────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS cruft ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Env / secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
