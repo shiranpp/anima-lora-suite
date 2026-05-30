@@ -144,6 +144,7 @@ function initPathCache() {
 // ─── Bootstrap ──────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   buildBlockGrid();
+  initBlockLabels();
   wireGlobalControls();
   wireViewToggle();
   wireThemeSwitch();
@@ -192,6 +193,7 @@ function makeLayer(path = '') {
     inspectedFor: null,   // the path we last inspected (dedupes auto-inspect)
     config: defaultLayerConfig(),
     preset: 'All Blocks',
+    labels: [],           // [{ id, text, color, blocks:[int] }] — block annotations
   };
 }
 
@@ -219,6 +221,7 @@ function syncActiveLayer() {
   L.config = collectEditConfig();
   L.preset = $('preset-select').value;
   L.name = L.path ? baseName(L.path) : '';
+  L.labels = currentLabels;
 }
 
 // Rehydrate the shared grid/config UI from a layer's stored state.
@@ -249,6 +252,9 @@ function applyLayerToUI(L) {
   // Restore this layer's inspection (impact meters, absent marks) or clear it.
   if (L.inspected && L.inspectData) applyInspectResult(L.inspectData);
   else resetInspectUI();
+
+  // Restore this layer's block labels (from the layer, else by its file path).
+  hydrateLabelsForActiveLayer();
 
   updateActiveLayerLabels();
 
@@ -387,6 +393,308 @@ function layersForRequest() {
   return state.layers
     .filter((l) => l.path)
     .map((l) => ({ lora_path: l.path, config: l.config }));
+}
+
+
+// ─── Block labels ─────────────────────────────────────────────────────────────
+// Annotate a set of AnimaBlock cells with a note, so you can keep track of which
+// sliders you changed and why. A label is { id, text, color, blocks:[int] }. They
+// live on the active layer (L.labels) and mirror to localStorage keyed by the
+// LoRA's file path, so re-inspecting the same file brings its labels back.
+const LABELS_STORE = 'anima-block-labels';
+const LABEL_COLORS = ['#ff8fa3', '#f4c969', '#c9a4ff', '#5fd6c0', '#7ab8ff', '#ffa765'];
+
+let currentLabels = [];   // mirrors the active layer's labels
+let labeling = false;     // block-select mode active?
+let labelDraft = null;    // { id|null, color, blocks:Set<int> } while composing
+
+function loadLabelStore() {
+  try { return JSON.parse(localStorage.getItem(LABELS_STORE) || '{}') || {}; }
+  catch { return {}; }
+}
+function saveLabelStore(map) {
+  try { localStorage.setItem(LABELS_STORE, JSON.stringify(map)); } catch { /* private mode */ }
+}
+function pathKey(path) { return (path || '').trim().toLowerCase(); }
+
+function labelsForPath(path) {
+  const key = pathKey(path);
+  if (!key) return [];
+  const arr = loadLabelStore()[key];
+  return Array.isArray(arr) ? arr : [];
+}
+
+// Persist the active layer's labels under its file path (no-op without a path —
+// labels still live in-memory on the layer until it gets one).
+function persistCurrentLabels() {
+  const L = activeLayer();
+  if (L) L.labels = currentLabels;
+  const key = pathKey(L && L.path);
+  if (!key) return;
+  const map = loadLabelStore();
+  if (currentLabels.length) map[key] = currentLabels;
+  else delete map[key];
+  saveLabelStore(map);
+}
+
+// Point currentLabels at the active layer's labels (preferring ones already on
+// the layer, else whatever's saved for its path), then repaint chips + markers.
+function hydrateLabelsForActiveLayer() {
+  const L = activeLayer();
+  const fromLayer = L && Array.isArray(L.labels) && L.labels.length ? L.labels : null;
+  currentLabels = fromLayer || labelsForPath(L && L.path);
+  if (L) L.labels = currentLabels;
+  exitLabelMode();
+  renderLabels();
+}
+
+function newLabelId() {
+  const seq = currentLabels.reduce((m, l) => Math.max(m, +(l.id || '').replace(/\D/g, '') || 0), 0);
+  return `lbl-${seq + 1}-${currentLabels.length}`;
+}
+
+function initBlockLabels() {
+  $('label-add-btn').addEventListener('click', () => {
+    if (labeling) exitLabelMode();
+    else enterLabelMode(null);
+  });
+  $('label-cancel').addEventListener('click', exitLabelMode);
+  $('label-save').addEventListener('click', onSaveLabel);
+  $('label-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); onSaveLabel(); }
+    if (e.key === 'Escape') { e.preventDefault(); exitLabelMode(); }
+  });
+  renderLabelSwatches(LABEL_COLORS[0]);
+  renderLabels();
+}
+
+// Begin composing a label. `existing` rehydrates the form to edit one in place.
+function enterLabelMode(existing) {
+  labeling = true;
+  labelDraft = existing
+    ? { id: existing.id, color: existing.color, blocks: new Set(existing.blocks) }
+    : { id: null, color: LABEL_COLORS[currentLabels.length % LABEL_COLORS.length], blocks: new Set() };
+
+  $('block-grid').classList.add('labeling');
+  $('label-form').classList.remove('hidden');
+  $('label-add-btn').classList.add('is-active');
+  $('label-text').value = existing ? existing.text : '';
+  renderLabelSwatches(labelDraft.color);
+  syncSelectedCells();
+  updateLabelHint();
+  $('label-text').focus();
+}
+
+function exitLabelMode() {
+  labeling = false;
+  labelDraft = null;
+  const grid = $('block-grid');
+  if (grid) grid.classList.remove('labeling');
+  for (let i = 0; i < NUM_BLOCKS; i++) blockCell(i).classList.remove('selected');
+  const form = $('label-form');
+  if (form) form.classList.add('hidden');
+  const add = $('label-add-btn');
+  if (add) add.classList.remove('is-active');
+}
+
+function toggleBlockSelection(i) {
+  if (!labelDraft) return;
+  if (labelDraft.blocks.has(i)) labelDraft.blocks.delete(i);
+  else labelDraft.blocks.add(i);
+  blockCell(i).classList.toggle('selected', labelDraft.blocks.has(i));
+  updateLabelHint();
+}
+
+function syncSelectedCells() {
+  for (let i = 0; i < NUM_BLOCKS; i++) {
+    blockCell(i).classList.toggle('selected', !!labelDraft && labelDraft.blocks.has(i));
+  }
+}
+
+function updateLabelHint() {
+  const n = labelDraft ? labelDraft.blocks.size : 0;
+  $('label-form-hint').textContent = n
+    ? `${n} block${n === 1 ? '' : 's'} selected — name it, then Save.`
+    : 'Click blocks in the grid to include them.';
+}
+
+function renderLabelSwatches(selected) {
+  const wrap = $('label-swatches');
+  if (!wrap) return;
+  wrap.replaceChildren(...LABEL_COLORS.map((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'label-swatch' + (c === selected ? ' is-active' : '');
+    b.style.setProperty('--swatch', c);
+    b.title = 'Use this colour';
+    b.setAttribute('aria-label', `colour ${c}`);
+    b.addEventListener('click', () => {
+      if (labelDraft) labelDraft.color = c;
+      wrap.querySelectorAll('.label-swatch').forEach((s) => s.classList.remove('is-active'));
+      b.classList.add('is-active');
+    });
+    return b;
+  }));
+}
+
+function onSaveLabel() {
+  if (!labelDraft) return;
+  const text = $('label-text').value.trim();
+  if (!text) { toast('name the label first', 'error'); $('label-text').focus(); return; }
+  if (!labelDraft.blocks.size) { toast('pick at least one block', 'error'); return; }
+
+  const blocks = [...labelDraft.blocks].sort((a, b) => a - b);
+  if (labelDraft.id) {
+    const L = currentLabels.find((l) => l.id === labelDraft.id);
+    if (L) { L.text = text; L.color = labelDraft.color; L.blocks = blocks; }
+  } else {
+    currentLabels.push({ id: newLabelId(), text, color: labelDraft.color, blocks });
+  }
+  persistCurrentLabels();
+  exitLabelMode();
+  renderLabels();
+  toast('label saved', 'success');
+}
+
+function deleteLabel(id) {
+  const idx = currentLabels.findIndex((l) => l.id === id);
+  if (idx < 0) return;
+  currentLabels.splice(idx, 1);
+  persistCurrentLabels();
+  renderLabels();
+  toast('label removed', '');
+}
+
+// Briefly pulse a label's member cells so you can see which blocks it covers.
+let labelHiliteTimer = null;
+function highlightLabelBlocks(id) {
+  const label = currentLabels.find((l) => l.id === id);
+  if (!label) return;
+  clearTimeout(labelHiliteTimer);
+  for (let i = 0; i < NUM_BLOCKS; i++) blockCell(i).classList.remove('label-hilite');
+  label.blocks.forEach((i) => {
+    const cell = blockCell(i);
+    if (cell) cell.classList.add('label-hilite');
+  });
+  const first = blockCell(label.blocks[0]);
+  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  labelHiliteTimer = setTimeout(() => {
+    for (let i = 0; i < NUM_BLOCKS; i++) blockCell(i).classList.remove('label-hilite');
+  }, 1600);
+}
+
+// A human-readable "which sliders" summary: each member block + its current
+// strength, so the chip's tooltip records what you changed.
+function labelStrengthSummary(label) {
+  return label.blocks.map((i) => {
+    const s = blockStrength(i);
+    const v = s ? (+s.value).toFixed(2) : '1.00';
+    const off = blockToggle(i) && !blockToggle(i).checked ? ' (off)' : '';
+    return `${String(i).padStart(2, '0')} @ ${v}${off}`;
+  }).join('  ·  ');
+}
+
+function renderLabels() {
+  renderLabelChips();
+  renderLabelMarkers();
+}
+
+function renderLabelChips() {
+  const wrap = $('label-chips');
+  if (!wrap) return;
+  wrap.replaceChildren(...currentLabels.map((label) => {
+    const chip = document.createElement('div');
+    chip.className = 'label-chip';
+    chip.style.setProperty('--chip', label.color);
+    chip.title = `Blocks ${label.blocks.join(', ')}\n${labelStrengthSummary(label)}`;
+
+    const name = document.createElement('button');
+    name.type = 'button';
+    name.className = 'label-chip-name';
+    name.innerHTML =
+      `<span class="label-chip-dot" aria-hidden="true"></span>` +
+      `<span class="label-chip-text">${escapeHtml(label.text)}</span>` +
+      `<span class="label-chip-count">${label.blocks.length}</span>`;
+    name.title = 'Click to highlight · double-click to edit';
+    name.addEventListener('click', () => highlightLabelBlocks(label.id));
+    name.addEventListener('dblclick', () => enterLabelMode(label));
+
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'label-chip-remove';
+    rm.title = 'Remove label';
+    rm.textContent = '×';
+    rm.addEventListener('click', (e) => { e.stopPropagation(); deleteLabel(label.id); });
+
+    chip.append(name, rm);
+    return chip;
+  }));
+}
+
+// Build CSS gradient colour-stops that split a bar into one hard-edged segment
+// per label colour — so a block carrying several labels shows every colour.
+function colorStops(colors) {
+  if (colors.length === 1) return `${colors[0]} 0% 100%`;
+  const seg = 100 / colors.length;
+  return colors
+    .map((c, i) => `${c} ${(i * seg).toFixed(2)}% ${((i + 1) * seg).toFixed(2)}%`)
+    .join(', ');
+}
+
+// Colour-code each labelled cell: tint its border + wash, lay a segmented colour
+// bar across the top (one segment per label), and list the label names as
+// readable colour-coded tags. Multiple labels stack as bar segments + tags.
+function renderLabelMarkers() {
+  const byBlock = new Map();
+  currentLabels.forEach((label) => {
+    label.blocks.forEach((i) => {
+      if (!byBlock.has(i)) byBlock.set(i, []);
+      byBlock.get(i).push(label);
+    });
+  });
+  for (let i = 0; i < NUM_BLOCKS; i++) {
+    const cell = blockCell(i);
+    let bar = cell.querySelector('.block-label-bar');
+    let strip = cell.querySelector('.block-labels');
+    const labels = byBlock.get(i);
+
+    if (!labels) {
+      cell.classList.remove('labeled');
+      cell.style.removeProperty('--label-color');
+      cell.style.removeProperty('--label-stops');
+      if (bar) bar.remove();
+      if (strip) strip.remove();
+      continue;
+    }
+
+    const colors = labels.map((l) => l.color);
+    cell.classList.add('labeled');
+    cell.style.setProperty('--label-color', colors[0]);
+    cell.style.setProperty('--label-stops', colorStops(colors));
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'block-label-bar';
+      cell.insertBefore(bar, cell.firstChild);
+    }
+    bar.title = labels.map((l) => l.text).join(' · ');
+
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.className = 'block-labels';
+      cell.appendChild(strip);
+    }
+    strip.replaceChildren(...labels.map((label) => {
+      const tag = document.createElement('span');
+      tag.className = 'block-label-tag';
+      tag.style.setProperty('--chip', label.color);
+      tag.title = label.text;
+      tag.innerHTML =
+        `<span class="block-label-tag-dot" aria-hidden="true"></span>` +
+        `<span class="block-label-tag-text">${escapeHtml(label.text)}</span>`;
+      return tag;
+    }));
+  }
 }
 
 
@@ -800,6 +1108,13 @@ function buildBlockGrid() {
       blockStrengthVal(i).textContent = (+blockStrength(i).value).toFixed(2);
       markPresetCustom();
     });
+    // While labelling, a click anywhere on the cell (but not on its checkbox /
+    // slider) toggles the block's membership in the label being composed.
+    blockCell(i).addEventListener('click', (e) => {
+      if (!labeling) return;
+      if (e.target.closest('input')) return;
+      toggleBlockSelection(i);
+    });
   }
 }
 
@@ -832,6 +1147,8 @@ function wireGlobalControls() {
     if (L) {
       L.path = loraIn.value;
       L.name = L.path ? baseName(L.path) : '';
+      // A different file carries its own saved labels — swap them in.
+      hydrateLabelsForActiveLayer();
       renderLayerBar();
     }
     autoSuggestOutputPath();
@@ -978,6 +1295,7 @@ async function onInspect(opts = {}) {
       L.inspectedFor = path;
       L.config = collectEditConfig();   // post-inspect (absent blocks now unchecked)
       L.preset = $('preset-select').value;
+      hydrateLabelsForActiveLayer();    // bring back any labels saved for this file
       renderLayerBar();
     }
     rememberPath('lora_in', path);  // a path that inspected cleanly is worth reusing

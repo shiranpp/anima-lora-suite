@@ -270,6 +270,33 @@
         relative to the strongest layer — <b>brighter colours mark the strongest</b>.
       </p>
 
+      <!-- ─── Block labels ──────────────────────────────────────────────────
+           Tag a set of blocks with a note so you can track which sliders you
+           changed and why. Stored locally, per LoRA layer (by file path). -->
+      <div class="labels-bar" id="labels-bar">
+        <button type="button" class="label-add-btn" id="label-add-btn"
+                title="Select a set of blocks and give them a label">
+          <span aria-hidden="true">🏷</span> Label blocks
+        </button>
+        <div class="label-chips" id="label-chips"><!-- label chips injected by script.js --></div>
+      </div>
+
+      <!-- Inline composer — shown while picking blocks for a new/edited label -->
+      <div class="label-form hidden" id="label-form" role="group" aria-label="Create block label">
+        <div class="label-form-main">
+          <input id="label-text" type="text" maxlength="48" spellcheck="false"
+                 placeholder="What did these blocks change? e.g. warmer skin tones" />
+          <div class="label-swatches" id="label-swatches" role="group" aria-label="Label colour"></div>
+        </div>
+        <div class="label-form-foot">
+          <span class="label-form-hint" id="label-form-hint">Click blocks in the grid to include them.</span>
+          <div class="label-form-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="label-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" id="label-save">Save label</button>
+          </div>
+        </div>
+      </div>
+
       <div class="block-grid" id="block-grid" data-view="grid">
         <!-- Block cells injected by script.js -->
       </div>

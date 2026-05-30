@@ -1399,6 +1399,241 @@ body.validated .leg-kw { display: inline-flex; }
 .grid-hint b { color: var(--cream-2); font-style: normal; font-weight: 600; }
 
 /* ───────────────────────────────────────────────────────────────────────────
+   BLOCK LABELS — annotate a set of blocks with a named note
+   ─────────────────────────────────────────────────────────────────────────── */
+.labels-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.label-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cream-2);
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px dashed var(--border-strong);
+  background: var(--card-deep);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.label-add-btn:hover { border-color: var(--border-glow); color: var(--cream); }
+.label-add-btn.is-active {
+  border-style: solid;
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--sakura), var(--sakura-deep));
+  border-color: var(--sakura);
+}
+
+.label-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--chip) 45%, transparent);
+  background: color-mix(in srgb, var(--chip) 12%, var(--card-deep));
+}
+.label-chip-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--cream);
+  background: none;
+  border: none;
+  padding: 6px 4px 6px 11px;
+  cursor: pointer;
+}
+.label-chip-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--chip);
+  box-shadow: 0 0 8px var(--chip);
+  flex: none;
+}
+.label-chip-text { white-space: nowrap; }
+.label-chip-count {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--card-deep);
+  border: 1px solid var(--border);
+}
+.label-chip-remove {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted-2);
+  background: none;
+  border: none;
+  padding: 4px 10px 4px 4px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.label-chip-remove:hover { color: var(--sakura); }
+
+/* Inline composer */
+.label-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--card-deep);
+}
+.label-form.hidden { display: none; }
+.label-form-main {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.label-form-main input[type="text"] {
+  flex: 1 1 240px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  color: var(--cream);
+}
+.label-form-main input[type="text"]:focus {
+  outline: none;
+  border-color: var(--sakura);
+  box-shadow: 0 0 0 3px rgba(255, 143, 163, 0.15);
+}
+.label-swatches { display: inline-flex; gap: 6px; }
+.label-swatch {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--swatch);
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.label-swatch:hover { transform: scale(1.12); }
+.label-swatch.is-active {
+  border-color: var(--cream);
+  box-shadow: 0 0 10px -1px var(--swatch);
+}
+.label-form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.label-form-hint {
+  font-family: var(--font-accent);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--muted);
+}
+.label-form-actions { display: inline-flex; gap: 8px; }
+
+/* Selection + member highlight on the block cells */
+.block-grid.labeling .block-cell { cursor: copy; }
+.block-grid.labeling .block-cell:hover { border-color: var(--border-glow); }
+.block-cell.selected {
+  border-color: var(--sakura);
+  box-shadow: 0 0 0 2px rgba(255, 143, 163, 0.35), var(--shadow-glow);
+}
+@keyframes label-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 143, 163, 0); }
+  35%      { box-shadow: 0 0 0 3px rgba(255, 143, 163, 0.5), var(--shadow-glow); }
+}
+.block-cell.label-hilite { animation: label-pulse 1.6s ease-in-out; }
+
+/* A labelled cell is colour-coded all over: tinted border + faint wash + glow,
+   so the block reads as "tagged" at a glance even before you read the names. */
+.block-cell.labeled {
+  border-color: color-mix(in srgb, var(--label-color) 60%, var(--border));
+  background: color-mix(in srgb, var(--label-color) 9%, var(--card-light));
+  box-shadow: 0 0 22px -10px var(--label-color);
+}
+.block-cell.labeled:hover {
+  border-color: var(--label-color);
+  background: color-mix(in srgb, var(--label-color) 15%, var(--card-light));
+}
+
+/* Segmented colour bar — one hard-edged segment per label, so a block with
+   several labels shows every colour. Absolutely positioned (a top cap in grid
+   view) so it never shifts the cell's controls or break their alignment. */
+.block-label-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 5px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: linear-gradient(90deg, var(--label-stops));
+  box-shadow: 0 0 10px -2px var(--label-color);
+}
+
+/* Readable name tags — replaces the old hard-to-see dots */
+.block-labels {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.block-label-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--cream);
+  background: color-mix(in srgb, var(--chip) 22%, var(--card-deep));
+  border: 1px solid color-mix(in srgb, var(--chip) 55%, transparent);
+}
+.block-label-tag-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--chip);
+  box-shadow: 0 0 6px var(--chip);
+  flex: none;
+}
+.block-label-tag-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* List view — the bar is a vertical colour strip tucked in the left gutter
+   (absolute, so the row's columns stay put), and the name tags wrap onto their
+   own line below the controls so they never push the slider out of alignment. */
+.block-grid[data-view="list"] .block-cell { flex-wrap: wrap; }
+.block-grid[data-view="list"] .block-label-bar {
+  top: 8px; bottom: 8px; left: 7px; right: auto;
+  height: auto; width: 4px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--label-stops));
+}
+.block-grid[data-view="list"] .block-labels {
+  order: 9;
+  flex: 1 0 100%;     /* force a full-width second line under the controls */
+  margin: 4px 0 0;
+  padding-left: 30px;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
    FOOTER & MISC
    ─────────────────────────────────────────────────────────────────────────── */
 
