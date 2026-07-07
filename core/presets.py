@@ -13,19 +13,10 @@ Empirical heuristics for DiT-style models (Cosmos / Anima / Z-Image / Qwen):
 ANIMA_NUM_BLOCKS = 28
 
 ANIMA_PRESETS = {
-    "All Blocks":            set(range(28)),
-    "All Off":               set(),
-    "Late Only (19-27)":     set(range(19, 28)),
-    "Mid-Late (14-27)":      set(range(14, 28)),
-    "Skip Early (10-27)":    set(range(10, 28)),
-    "Mid Only (10-18)":      set(range(10, 19)),
-    "Early Only (0-9)":      set(range(10)),
-    "Peak Impact (16-24)":   set(range(16, 25)),
-    "Face Priority (14-22)": set(range(14, 23)),
-    "Style Focus (22-27)":   set(range(22, 28)),
-    "Evens Only":            set(range(0, 28, 2)),
-    "Odds Only":             set(range(1, 28, 2)),
-    "Custom":                None,  # use individual toggles
+    "All Blocks":            {i: 1 for i in range(28)},
+    "All Off":               {},
+    "Character": dict(enumerate([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.2,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.3,0.3,0.3,0.3,0.2,0.2,0.2,0.2,0.2])),
+    "Style":   dict(enumerate([0.9,0.9,0.9,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.6,0.6,0.6,0.5,0.5])),
 }
 
 

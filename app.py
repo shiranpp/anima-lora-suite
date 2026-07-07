@@ -99,7 +99,7 @@ def api_presets():
         if blocks is None:
             out[name] = None  # 'Custom' -> let UI handle
         else:
-            out[name] = sorted(blocks)
+            out[name] = blocks
     return jsonify(presets=out, num_blocks=ANIMA_NUM_BLOCKS)
 
 

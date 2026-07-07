@@ -1222,22 +1222,30 @@ async function loadPresets() {
 function onPresetChange() {
   const name = $('preset-select').value;
   const blocks = state.presets[name];
-  if (blocks === null) return;  // 'Custom' — leave UI as is
-
-  const enabled = new Set(blocks);
+  if (!blocks) return; 
+  console.log(blocks);
   for (let i = 0; i < NUM_BLOCKS; i++) {
-    const isOn = enabled.has(i);
-    blockToggle(i).checked = isOn;
-    blockStrength(i).value = 1.0;
-    blockStrengthVal(i).textContent = '1.00';
-    blockCell(i).classList.toggle('disabled', !isOn);
+    const rawVal = blocks[i]; 
+    const str = Number.isFinite(rawVal) ? rawVal : 0;
+    const isOn = str > 0;
+
+    const toggleEl = blockToggle(i);
+    const strengthEl = blockStrength(i);
+    const strengthValEl = blockStrengthVal(i);
+    const cellEl = blockCell(i);
+
+    if (toggleEl) toggleEl.checked = isOn;
+    if (strengthEl) strengthEl.value = str;
+    if (strengthValEl) strengthValEl.textContent = str.toFixed(2);
+    if (cellEl) cellEl.classList.toggle('disabled', !isOn);
   }
 
-  // 'All Off' should also turn off LLMAdapter and Other weights, matching the
-  // ComfyUI preset behaviour.
   if (name === 'All Off') {
     $('llm-enabled').checked = false;
     $('other-enabled').checked = false;
+  }else{
+    $('llm-enabled').checked = true;
+    $('other-enabled').checked = true;
   }
 }
 
